@@ -1,0 +1,29 @@
+005 production_preflight
+010 validate_config
+020 ssh_precheck
+025 remote_tool_precheck
+030 source_database_prerequisites
+035 source_dataguard_inventory
+040 target_precheck
+042 configure_tns_aliases
+043 configure_static_aux_listener
+044 create_or_reuse_oci_placeholder_nomount
+045 prepare_password_file
+046 validate_tns_matrix
+047 validate_SYSDBA_connectivity
+048 detect_and_stage_TDE_keystore
+049 prepare_DG_CONFIG_and_deferred_transport
+050 validate_offline_backup             [OFFLINE_BACKUP only]
+060 stage_and_checksum_offline_backup   [OFFLINE_BACKUP only]
+070 RMAN_standby_duplicate
+080 restart_mount_and_start_redo_apply
+085 enable_primary_redo_transport
+090 ensure_standby_redo_logs_primary_and_standby
+100 RAC_validation_and_enablement       [RAC target only]
+110 Data_Guard_health
+120 Data_Guard_sync
+130 snapshot_readiness
+140 switchover_readiness
+150 failover_readiness
+160 final_validation_report
+170 final_validation_gate

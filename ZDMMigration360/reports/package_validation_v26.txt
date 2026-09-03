@@ -1,0 +1,80 @@
+[2026-08-30 17:16:05] STEP 005 [production_preflight] starting.
+MOCK:production_preflight
+[2026-08-30 17:16:05] STEP 005 [production_preflight] completed.
+[2026-08-30 17:16:05] STEP 010 [validate_config] starting.
+MOCK:precheck_validate_config
+[2026-08-30 17:16:05] STEP 010 [validate_config] completed.
+[2026-08-30 17:16:05] STEP 020 [ssh_precheck] starting.
+MOCK:precheck_ssh
+[2026-08-30 17:16:05] STEP 020 [ssh_precheck] completed.
+[2026-08-30 17:16:05] STEP 025 [remote_tool_precheck] starting.
+MOCK:precheck_remote_tools
+[2026-08-30 17:16:05] STEP 025 [remote_tool_precheck] completed.
+[2026-08-30 17:16:05] STEP 030 [source_database_prerequisites] starting.
+MOCK:precheck_database_roles
+[2026-08-30 17:16:05] STEP 030 [source_database_prerequisites] completed.
+[2026-08-30 17:16:05] STEP 035 [source_dataguard_inventory] starting.
+MOCK:dg_inventory
+[2026-08-30 17:16:05] STEP 035 [source_dataguard_inventory] completed.
+[2026-08-30 17:16:05] STEP 040 [target_precheck] starting.
+MOCK:precheck_target_nonrac
+[2026-08-30 17:16:05] STEP 040 [target_precheck] completed.
+[2026-08-30 17:16:05] STEP 042 [configure_tns_aliases] starting.
+MOCK:tns_configure
+[2026-08-30 17:16:05] STEP 042 [configure_tns_aliases] completed.
+[2026-08-30 17:16:05] STEP 043 [configure_static_aux_listener] starting.
+MOCK:aux_listener_configure
+[2026-08-30 17:16:05] STEP 043 [configure_static_aux_listener] completed.
+[2026-08-30 17:16:05] STEP 044 [create_or_reuse_oci_placeholder_nomount] starting.
+MOCK:oci_placeholder_create
+[2026-08-30 17:16:05] STEP 044 [create_or_reuse_oci_placeholder_nomount] completed.
+[2026-08-30 17:16:05] STEP 045 [prepare_password_file] starting.
+MOCK:passwordfile_prepare
+[2026-08-30 17:16:05] STEP 045 [prepare_password_file] completed.
+[2026-08-30 17:16:05] STEP 046 [validate_tns_matrix] starting.
+MOCK:tns_validate_matrix
+[2026-08-30 17:16:05] STEP 046 [validate_tns_matrix] completed.
+[2026-08-30 17:16:05] STEP 047 [validate_SYSDBA_connectivity] starting.
+MOCK:sysdba_connectivity_validate
+[2026-08-30 17:16:05] STEP 047 [validate_SYSDBA_connectivity] completed.
+[2026-08-30 17:16:05] STEP 048 [detect_and_stage_TDE_keystore] starting.
+MOCK:tde_prepare
+[2026-08-30 17:16:05] STEP 048 [detect_and_stage_TDE_keystore] completed.
+[2026-08-30 17:16:05] STEP 049 [prepare_DG_CONFIG_and_deferred_transport] starting.
+MOCK:dg_config_source_prepare
+[2026-08-30 17:16:05] STEP 049 [prepare_DG_CONFIG_and_deferred_transport] completed.
+[2026-08-30 17:16:05] STEP 070 [RMAN_active_standby_duplicate] starting.
+MOCK:rman_active_duplicate
+[2026-08-30 17:16:05] STEP 070 [RMAN_active_standby_duplicate] completed.
+[2026-08-30 17:16:05] STEP 080 [restart_mount_and_start_redo_apply] starting.
+MOCK:postbuild_restart_mount
+[2026-08-30 17:16:05] STEP 080 [restart_mount_and_start_redo_apply] completed.
+[2026-08-30 17:16:05] STEP 085 [enable_primary_redo_transport] starting.
+MOCK:dg_transport_enable
+[2026-08-30 17:16:05] STEP 085 [enable_primary_redo_transport] completed.
+[2026-08-30 17:16:05] STEP 090 [ensure_standby_redo_logs] starting.
+MOCK:dg_srl_ensure
+[2026-08-30 17:16:05] STEP 090 [ensure_standby_redo_logs] completed.
+[2026-08-30 17:16:05] STEP 110 [Data_Guard_health] starting.
+MOCK:dg_health
+[2026-08-30 17:16:05] STEP 110 [Data_Guard_health] completed.
+[2026-08-30 17:16:05] STEP 120 [Data_Guard_sync] starting.
+MOCK:dg_sync
+[2026-08-30 17:16:05] STEP 120 [Data_Guard_sync] completed.
+[2026-08-30 17:16:05] STEP 130 [snapshot_readiness] starting.
+MOCK:snapshot_status
+[2026-08-30 17:16:05] STEP 130 [snapshot_readiness] completed.
+[2026-08-30 17:16:05] STEP 140 [switchover_readiness] starting.
+MOCK:switchover_precheck
+[2026-08-30 17:16:05] STEP 140 [switchover_readiness] completed.
+[2026-08-30 17:16:05] STEP 150 [failover_readiness] starting.
+MOCK:failover_precheck
+[2026-08-30 17:16:05] STEP 150 [failover_readiness] completed.
+[2026-08-30 17:16:05] STEP 160 [final_validation_report] starting.
+MOCK:final_validation_report
+[2026-08-30 17:16:05] STEP 160 [final_validation_report] completed.
+[2026-08-30 17:16:05] STEP 170 [final_validation_gate] starting.
+MOCK:final_validation_gate
+[2026-08-30 17:16:05] STEP 170 [final_validation_gate] completed.
+SELFTEST PASS
+PACKAGE VALIDATION PASS

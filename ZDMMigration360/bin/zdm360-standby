@@ -1,0 +1,824 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SELF="$(readlink -f "$0")"
+ZDM360_ROOT="$(cd "$(dirname "$SELF")/.." && pwd)"
+export ZDM360_ROOT
+
+source "$ZDM360_ROOT/lib/common.sh"
+source "$ZDM360_ROOT/lib/operator_policy.sh"
+source "$ZDM360_ROOT/lib/input.sh"
+source "$ZDM360_ROOT/lib/driver_file.sh"
+source "$ZDM360_ROOT/lib/remote.sh"
+source "$ZDM360_ROOT/lib/network.sh"
+source "$ZDM360_ROOT/lib/security.sh"
+source "$ZDM360_ROOT/lib/precheck.sh"
+source "$ZDM360_ROOT/lib/oci_placeholder.sh"
+source "$ZDM360_ROOT/lib/rman.sh"
+source "$ZDM360_ROOT/lib/dataguard.sh"
+source "$ZDM360_ROOT/lib/dg_config.sh"
+source "$ZDM360_ROOT/lib/operations.sh"
+source "$ZDM360_ROOT/lib/rac.sh"
+source "$ZDM360_ROOT/lib/workflow.sh"
+source "$ZDM360_ROOT/lib/full_build.sh"
+source "$ZDM360_ROOT/lib/batch.sh"
+source "$ZDM360_ROOT/lib/final_report.sh"
+source "$ZDM360_ROOT/lib/zdm_physical.sh"
+source "$ZDM360_ROOT/lib/task_select.sh"
+
+load_config
+operator_policy_defaults
+
+usage(){
+cat <<'EOF'
+ZDMMigration360 Standby Manager
+
+Interactive:
+  zdm360-standby
+  zdm360-standby menu
+  zdm360-standby full-build
+
+Complete build:
+  zdm360-standby full-build
+  zdm360-standby full-build --non-interactive
+
+Task selection:
+  zdm360-standby task-list
+  zdm360-standby tasks 1
+  zdm360-standby tasks 1,10 --foreground
+  zdm360-standby tasks 1-10 --background
+  zdm360-standby tasks 1,4,7 --background
+  zdm360-standby tasks all --background
+  zdm360-standby steps 005,010,070 --background
+  zdm360-standby failed-from <job-id> --background
+
+Notes:
+  tasks 1,10 means inclusive task range 1 through 10.
+  tasks 1,4,7 means the explicit tasks 1, 4 and 7.
+  steps selects production step IDs rather than ordinal task numbers.
+  A directly selected step 070 automatically enforces step 069 first.
+
+Submit ALL tasks at once:
+  zdm360-standby all --background
+  zdm360-standby all --foreground
+  zdm360-standby resume-all <job-id> --background
+  zdm360-standby plan
+
+Build:
+  zdm360-standby build
+  zdm360-standby build --background
+  zdm360-standby resume <job-id>
+  zdm360-standby resume <job-id> --background
+
+Job tracking:
+  zdm360-standby jobs
+  zdm360-standby status <job-id>
+  zdm360-standby logs <job-id>
+  zdm360-standby wait <job-id>
+  zdm360-standby stop <job-id>
+
+ZDM physical migration (when ZDM is installed on target):
+  zdm360-standby zdm-check
+  zdm360-standby zdm-phases
+  zdm360-standby zdm-eval
+  zdm360-standby zdm-online-standby
+  zdm360-standby zdm-online-full
+  zdm360-standby zdm-offline
+  zdm360-standby zdm-query [job-id]
+  zdm360-standby zdm-resume <job-id>
+
+Operator/access validation:
+  zdm360-standby access-check
+
+Individual operations:
+  zdm360-standby preflight
+  zdm360-standby precheck
+  zdm360-standby placeholder
+  zdm360-standby dg-validate
+  zdm360-standby sync
+
+Environment/config:
+  CONFIG_FILE=/path/standby.env
+  STANDBY_BUILD_METHOD=ACTIVE_DUPLICATE|OFFLINE_BACKUP
+  TARGET_RAC_ENABLED=YES|NO
+
+Driver file:
+  Default location: conf/zdm360PH.drv
+
+  -d, --driver FILE
+  --drv FILE
+      Load all standby input values from zdm360PH.drv.
+
+  zdm360-standby drv-all --background
+      Uses conf/zdm360PH.drv automatically.
+      If the file does not exist, prompts for all required values,
+      creates conf/zdm360PH.drv, then submits the build.
+
+  zdm360-standby -d ./zdm360PH.drv all --background
+  zdm360-standby --driver ./zdm360PH.drv plan
+
+Driver utilities:
+  zdm360-standby driver-template [FILE]
+  zdm360-standby driver-validate FILE
+  zdm360-standby driver-show FILE
+
+Precedence:
+  conf/standby.env < zdm360PH.drv < explicit CLI switches
+
+Non-interactive input switches:
+  -s, --source-db-name NAME
+  -u, --source-db-unique-name NAME
+  -S, --source-sid SID
+  -H, --source-host HOST
+  -O, --source-oracle-home PATH
+  -r, --source-service SERVICE
+
+  -t, --target-db-name NAME
+  -U, --target-db-unique-name NAME
+  -T, --target-sid SID
+  -h, --target-host HOST
+  -o, --target-oracle-home PATH
+  -R, --target-service SERVICE
+
+  -m, --method ACTIVE_DUPLICATE|OFFLINE_BACKUP
+  -p, --platform AUTO|BASE_DB_SERVICE_DBCLI|GENERIC_OCI_OR_SELF_MANAGED
+  --source-os-user USER
+  --target-os-user USER
+  --target-provision-user USER
+  --source-port PORT
+  --target-port PORT
+  --target-aux-port PORT
+  --target-aux-listener NAME
+  --source-tns-alias ALIAS
+  --target-tns-alias ALIAS
+  --db-create-file-dest DEST
+  --fra DEST
+  --fra-size SIZE
+  --source-backup-stage PATH
+  --target-backup-stage PATH
+  --copy-method SCP|RSYNC|NFS
+  --rac YES|NO
+  --rac-instances N
+  --grid-home PATH
+  --undo-prefix NAME
+  --redo-size-mb MB
+  --sync-wait SECONDS
+  --sync-poll SECONDS
+  --source-tde-wallet PATH
+  --target-tde-wallet PATH
+  --dg-archive-dest-id N
+  --config FILE
+
+Secrets (supported but environment/secret manager is recommended):
+  --source-sys-password PASSWORD
+  --target-sys-password PASSWORD
+  --target-admin-password PASSWORD
+
+Example:
+  zdm360-standby \
+    -s ORCL -u ORCLPRD -S ORCL1 -H primary1 -O /u01/app/oracle/product/19c/dbhome_1 \
+    -r ORCLPRD \
+    -t ORCL -U ORCLSTBY -T ORCL1 -h standby1 -o /u01/app/oracle/product/19c/dbhome_1 \
+    -R ORCLSTBY -m ACTIVE_DUPLICATE -p AUTO --rac NO \
+    all --background
+EOF
+}
+
+background_launch(){
+  local action="$1"; shift
+  if [[ "$action" == "build" ]]; then
+    submit_all_tasks_background "${1:-}"
+  elif [[ "$action" == "resume" ]]; then
+    local jid="${1:?resume requires job-id}"
+    resume_all_tasks_background "$jid"
+  else
+    die "Unknown background action: $action"
+  fi
+}
+
+interactive_load_default_driver(){
+  local drv="$ZDM360_ROOT/conf/zdm360PH.drv"
+  if [[ -f "$drv" ]]; then
+    echo "Loading: $drv"
+    load_driver_file "$drv"
+    if ! driver_has_required_inputs; then
+      echo "Driver is incomplete. Starting input wizard..."
+      collect_full_build_inputs
+      write_driver_file "$drv"
+    fi
+  else
+    echo "Driver not found: $drv"
+    echo "Starting input wizard..."
+    collect_full_build_inputs
+    write_driver_file "$drv"
+  fi
+}
+
+interactive_task_runner(){
+  interactive_load_default_driver
+  echo
+  task_list
+  echo
+  echo "Selection examples:"
+  echo "  10       = individual task 10"
+  echo "  1,10     = range task 1 through 10"
+  echo "  1-10     = range task 1 through 10"
+  echo "  1,4,7    = selected tasks 1, 4, and 7"
+  echo "  all      = all tasks"
+  read -r -p "Task selection: " sel
+  read -r -p "Run in background? [Y/N]: " yn
+  if [[ "${yn^^}" == "Y" ]]; then
+    task_submit_background tasks "$sel"
+  else
+    local jid
+    jid="$(new_job_id)"
+    mkdir -p "$(job_dir "$jid")"
+    snapshot_job_config "$jid"
+    task_run_selector "$jid" "$sel"
+    show_job "$jid"
+  fi
+}
+
+interactive_step_runner(){
+  interactive_load_default_driver
+  task_list
+  echo
+  read -r -p "Production step ID(s), e.g. 005,010,070: " sel
+  read -r -p "Run in background? [Y/N]: " yn
+  if [[ "${yn^^}" == "Y" ]]; then
+    task_submit_background steps "$sel"
+  else
+    local jid
+    jid="$(new_job_id)"
+    mkdir -p "$(job_dir "$jid")"
+    snapshot_job_config "$jid"
+    task_run_steps "$jid" "$sel"
+    show_job "$jid"
+  fi
+}
+
+interactive_failed_from(){
+  read -r -p "Failed Job ID: " jid
+  show_job "$jid"
+  echo
+  read -r -p "Resume from failed task through the end? [Y/N]: " go
+  [[ "${go^^}" == "Y" ]] || return 0
+  read -r -p "Run resume in background? [Y/N]: " yn
+  if [[ "${yn^^}" == "Y" ]]; then
+    task_failed_from_background "$jid"
+  else
+    task_failed_from "$jid"
+    show_job "$jid"
+  fi
+}
+
+interactive_driver_menu(){
+  while true; do
+    cat <<'EOF'
+
+Driver / Input Menu
+-------------------
+1) Show conf/zdm360PH.drv
+2) Validate conf/zdm360PH.drv
+3) Create/replace driver using interactive prompts
+4) Create driver template
+5) Show resolved driver summary
+0) Back
+EOF
+    read -r -p "Choice: " dc
+    case "$dc" in
+      1)
+        if [[ -f "$ZDM360_ROOT/conf/zdm360PH.drv" ]]; then
+          # Mask secret values if operators have chosen to persist them.
+          sed -E \
+            -e 's/^(SOURCE_SYS_PASSWORD)=.*/\1=********/' \
+            -e 's/^(TARGET_SYS_PASSWORD)=.*/\1=********/' \
+            -e 's/^(TARGET_ADMIN_PASSWORD)=.*/\1=********/' \
+            "$ZDM360_ROOT/conf/zdm360PH.drv"
+        else
+          echo "Driver file does not exist."
+        fi
+        ;;
+      2)
+        interactive_load_default_driver
+        validate_full_build_inputs
+        echo "Driver validation: PASS"
+        ;;
+      3)
+        collect_full_build_inputs
+        write_driver_file "$ZDM360_ROOT/conf/zdm360PH.drv"
+        echo "Driver saved: $ZDM360_ROOT/conf/zdm360PH.drv"
+        ;;
+      4)
+        read -r -p "Template path [$ZDM360_ROOT/conf/zdm360PH.drv.example]: " p
+        p="${p:-$ZDM360_ROOT/conf/zdm360PH.drv.example}"
+        create_driver_template "$p"
+        ;;
+      5)
+        interactive_load_default_driver
+        print_driver_file_summary
+        ;;
+      0) return 0 ;;
+      *) echo "Invalid choice." ;;
+    esac
+  done
+}
+
+interactive_jobs_menu(){
+  while true; do
+    cat <<'EOF'
+
+Jobs / Background Tracking
+--------------------------
+1) List jobs
+2) Job status
+3) Show recent job log
+4) Follow job log
+5) Wait for job
+6) Stop job
+7) Resume from failed task
+0) Back
+EOF
+    read -r -p "Choice: " jc
+    case "$jc" in
+      1) list_jobs ;;
+      2) read -r -p "Job ID: " jid; show_job "$jid" ;;
+      3) read -r -p "Job ID: " jid; tail -n "${LINES:-200}" "$(job_dir "$jid")/output.log" ;;
+      4) read -r -p "Job ID: " jid; tail -f "$(job_dir "$jid")/output.log" ;;
+      5)
+        read -r -p "Job ID: " jid
+        pid="$(job_meta_get "$jid" pid || true)"
+        [[ -n "$pid" ]] || { echo "No PID recorded."; continue; }
+        while kill -0 "$pid" 2>/dev/null; do sleep "${WAIT_POLL_SECONDS:-10}"; done
+        show_job "$jid"
+        ;;
+      6)
+        read -r -p "Job ID: " jid
+        pgid="$(job_meta_get "$jid" pgid || true)"
+        pid="$(job_meta_get "$jid" pid || true)"
+        read -r -p "Stop job $jid? [Y/N]: " yn
+        if [[ "${yn^^}" == "Y" ]]; then
+          if [[ -n "$pgid" ]]; then kill -TERM -- "-$pgid" 2>/dev/null || true
+          elif [[ -n "$pid" ]]; then kill -TERM "$pid" 2>/dev/null || true
+          fi
+          job_meta_set "$jid" state STOPPED
+          echo "Stop signal sent."
+        fi
+        ;;
+      7) interactive_failed_from ;;
+      0) return 0 ;;
+      *) echo "Invalid choice." ;;
+    esac
+  done
+}
+
+interactive_operations_menu(){
+  while true; do
+    cat <<'EOF'
+
+Validation / Operations
+-----------------------
+1) Production preflight
+2) Source/target prechecks
+3) OCI placeholder create/validate
+4) RMAN method validation (step 069)
+5) Data Guard health validation
+6) Data Guard synchronization
+7) Snapshot readiness
+8) Switchover readiness
+9) Failover readiness
+10) Final validation report
+11) Final validation gate
+0) Back
+EOF
+    read -r -p "Choice: " oc
+    case "$oc" in
+      1) interactive_load_default_driver; production_preflight ;;
+      2) interactive_load_default_driver; precheck_validate_config; precheck_ssh; precheck_database_roles; precheck_target_nonrac ;;
+      3) interactive_load_default_driver; oci_placeholder_create ;;
+      4) interactive_load_default_driver; rman_duplicate_method_validate ;;
+      5) interactive_load_default_driver; dg_health ;;
+      6) interactive_load_default_driver; dg_sync ;;
+      7) interactive_load_default_driver; snapshot_status ;;
+      8) interactive_load_default_driver; switchover_precheck ;;
+      9) interactive_load_default_driver; failover_precheck ;;
+      10) interactive_load_default_driver; final_validation_report ;;
+      11) interactive_load_default_driver; final_validation_gate ;;
+      0) return 0 ;;
+      *) echo "Invalid choice." ;;
+    esac
+  done
+}
+
+interactive_menu(){
+  while true; do
+    cat <<'EOF'
+
+==============================================================
+        ZDMMigration360 Physical Standby Manager
+==============================================================
+1) COMPLETE BUILD - interactive inputs / driver -> standby
+2) Run ALL tasks - background
+3) Run ALL tasks - foreground
+4) Run individual task / task range / selected tasks
+5) Run production step ID(s)
+6) Resume from FAILED task through end
+7) Show numbered production task list
+8) Driver / Input management
+9) Jobs / Background tracking
+10) Validation / Operations
+11) ZDM physical migration / standby (if ZDM installed on target)
+12) Validate ops -> sudo oracle / SSH oracle access
+13) Show complete execution plan
+14) Package self-validation
+0) Exit
+--------------------------------------------------------------
+Task examples:
+  10       individual task
+  1,10     task range 1 through 10
+  1-10     task range 1 through 10
+  1,4,7    selected tasks
+  all      complete task list
+==============================================================
+EOF
+    read -r -p "Choice: " c
+    case "$c" in
+      1) complete_build_wizard ;;
+      2)
+        interactive_load_default_driver
+        submit_all_tasks_background
+        ;;
+      3)
+        interactive_load_default_driver
+        jid="$(new_job_id)"
+        mkdir -p "$(job_dir "$jid")"
+        snapshot_job_config "$jid"
+        workflow_all_tasks "$jid"
+        show_job "$jid"
+        ;;
+      4) interactive_task_runner ;;
+      5) interactive_step_runner ;;
+      6) interactive_failed_from ;;
+      7) task_list ;;
+      8) interactive_driver_menu ;;
+      9) interactive_jobs_menu ;;
+      10) interactive_operations_menu ;;
+      11) interactive_zdm_menu ;;
+      12) operator_access_preflight ;;
+      13) all_task_plan ;;
+      14)
+        "$ZDM360_ROOT/bin/zdm360-validate-package"
+        ;;
+      0) exit 0 ;;
+      *) echo "Invalid choice." ;;
+    esac
+  done
+}
+
+
+# ----------------------------------------------------------------------
+# Driver file + global non-interactive input switches
+#
+# Precedence:
+#   conf/standby.env < zdm360PH.drv < explicit CLI switches
+#
+# Examples:
+#   zdm360-standby -d /path/zdm360PH.drv all --background
+#   zdm360-standby --driver zdm360PH.drv -s ORCLNEW all --background
+# ----------------------------------------------------------------------
+ORIGINAL_ARGS=("$@")
+
+# First pass: discover --config and --driver/-d without consuming normal args.
+_requested_config=""
+_requested_driver=""
+_i=0
+while (( _i < ${#ORIGINAL_ARGS[@]} )); do
+  _arg="${ORIGINAL_ARGS[$_i]}"
+  case "$_arg" in
+    --config)
+      _i=$((_i+1))
+      (( _i < ${#ORIGINAL_ARGS[@]} )) || die "--config requires a value"
+      _requested_config="${ORIGINAL_ARGS[$_i]}"
+      ;;
+    -d|--driver|--drv)
+      _i=$((_i+1))
+      (( _i < ${#ORIGINAL_ARGS[@]} )) || die "$_arg requires a value"
+      _requested_driver="${ORIGINAL_ARGS[$_i]}"
+      ;;
+  esac
+  _i=$((_i+1))
+done
+
+# Load requested config first.
+if [[ -n "$_requested_config" ]]; then
+  CONFIG_FILE="$_requested_config"
+  export CONFIG_FILE
+  load_config
+fi
+
+# Then overlay the driver file.
+if [[ -n "$_requested_driver" ]]; then
+  load_driver_file "$_requested_driver"
+fi
+
+# Final pass: explicit CLI switches override both config and driver file.
+POSITIONAL=()
+set -- "${ORIGINAL_ARGS[@]}"
+while (($#)); do
+  case "$1" in
+    -d|--driver|--drv) shift 2 ;;
+    --config) CONFIG_FILE="${2:?value required}"; export CONFIG_FILE; shift 2 ;;
+
+    -s|--source-db-name) SOURCE_DB_NAME="${2:?value required}"; export SOURCE_DB_NAME; shift 2 ;;
+    -u|--source-db-unique-name) SOURCE_DB_UNIQUE_NAME="${2:?value required}"; export SOURCE_DB_UNIQUE_NAME; shift 2 ;;
+    -S|--source-sid) SOURCE_SID="${2:?value required}"; export SOURCE_SID; shift 2 ;;
+    -H|--source-host) SOURCE_HOST="${2:?value required}"; export SOURCE_HOST; shift 2 ;;
+    -O|--source-oracle-home) SOURCE_ORACLE_HOME="${2:?value required}"; export SOURCE_ORACLE_HOME; shift 2 ;;
+    -r|--source-service) SOURCE_SERVICE="${2:?value required}"; export SOURCE_SERVICE; shift 2 ;;
+    --source-os-user) SOURCE_OS_USER="${2:?value required}"; export SOURCE_OS_USER; shift 2 ;;
+    --source-port) SOURCE_LISTENER_PORT="${2:?value required}"; export SOURCE_LISTENER_PORT; shift 2 ;;
+    --source-tns-alias) SOURCE_TNS_ALIAS="${2:?value required}"; export SOURCE_TNS_ALIAS; shift 2 ;;
+    --source-is-cdb) SOURCE_IS_CDB="${2:?value required}"; export SOURCE_IS_CDB; shift 2 ;;
+
+    -t|--target-db-name) TARGET_DB_NAME="${2:?value required}"; export TARGET_DB_NAME; shift 2 ;;
+    -U|--target-db-unique-name) TARGET_DB_UNIQUE_NAME="${2:?value required}"; export TARGET_DB_UNIQUE_NAME; shift 2 ;;
+    -T|--target-sid) TARGET_SID="${2:?value required}"; export TARGET_SID; shift 2 ;;
+    -h|--target-host) TARGET_HOST="${2:?value required}"; export TARGET_HOST; shift 2 ;;
+    -o|--target-oracle-home) TARGET_ORACLE_HOME="${2:?value required}"; export TARGET_ORACLE_HOME; shift 2 ;;
+    -R|--target-service) TARGET_SERVICE="${2:?value required}"; export TARGET_SERVICE; shift 2 ;;
+    --target-os-user) TARGET_OS_USER="${2:?value required}"; export TARGET_OS_USER; shift 2 ;;
+    --target-provision-user) TARGET_PROVISION_OS_USER="${2:?value required}"; export TARGET_PROVISION_OS_USER; shift 2 ;;
+    --target-port) TARGET_LISTENER_PORT="${2:?value required}"; export TARGET_LISTENER_PORT; shift 2 ;;
+    --target-aux-port) TARGET_AUX_PORT="${2:?value required}"; export TARGET_AUX_PORT; shift 2 ;;
+    --target-aux-listener) TARGET_AUX_LISTENER_NAME="${2:?value required}"; export TARGET_AUX_LISTENER_NAME; shift 2 ;;
+    --target-tns-alias) TARGET_TNS_ALIAS="${2:?value required}"; export TARGET_TNS_ALIAS; shift 2 ;;
+
+    -m|--method) STANDBY_BUILD_METHOD="${2:?value required}"; export STANDBY_BUILD_METHOD; shift 2 ;;
+    -p|--platform) OCI_TARGET_PLATFORM="${2:?value required}"; export OCI_TARGET_PLATFORM; shift 2 ;;
+    --db-create-file-dest) TARGET_DB_CREATE_FILE_DEST="${2:?value required}"; export TARGET_DB_CREATE_FILE_DEST; shift 2 ;;
+    --fra) TARGET_DB_RECOVERY_FILE_DEST="${2:?value required}"; export TARGET_DB_RECOVERY_FILE_DEST; shift 2 ;;
+    --fra-size) TARGET_DB_RECOVERY_FILE_DEST_SIZE="${2:?value required}"; export TARGET_DB_RECOVERY_FILE_DEST_SIZE; shift 2 ;;
+
+    --source-backup-stage) SOURCE_BACKUP_STAGE="${2:?value required}"; export SOURCE_BACKUP_STAGE; shift 2 ;;
+    --target-backup-stage) TARGET_BACKUP_STAGE="${2:?value required}"; export TARGET_BACKUP_STAGE; shift 2 ;;
+    --copy-method) BACKUP_COPY_METHOD="${2:?value required}"; export BACKUP_COPY_METHOD; shift 2 ;;
+
+    --rac) TARGET_RAC_ENABLED="${2:?value required}"; export TARGET_RAC_ENABLED; shift 2 ;;
+    --rac-instances) TARGET_RAC_INSTANCES="${2:?value required}"; export TARGET_RAC_INSTANCES; shift 2 ;;
+    --grid-home) TARGET_GRID_HOME="${2:?value required}"; export TARGET_GRID_HOME; shift 2 ;;
+    --undo-prefix) TARGET_UNDO_PREFIX="${2:?value required}"; export TARGET_UNDO_PREFIX; shift 2 ;;
+    --redo-size-mb) TARGET_REDO_SIZE_MB="${2:?value required}"; export TARGET_REDO_SIZE_MB; shift 2 ;;
+
+    --sync-wait) SYNC_WAIT_SECONDS="${2:?value required}"; export SYNC_WAIT_SECONDS; shift 2 ;;
+    --sync-poll) SYNC_POLL_SECONDS="${2:?value required}"; export SYNC_POLL_SECONDS; shift 2 ;;
+    --source-tde-wallet) SOURCE_TDE_WALLET_PATH="${2:?value required}"; export SOURCE_TDE_WALLET_PATH; shift 2 ;;
+    --target-tde-wallet) TARGET_TDE_WALLET_PATH="${2:?value required}"; export TARGET_TDE_WALLET_PATH; shift 2 ;;
+    --dg-archive-dest-id) DG_ARCHIVE_DEST_ID="${2:?value required}"; export DG_ARCHIVE_DEST_ID; shift 2 ;;
+    --background-value) FULL_BUILD_BACKGROUND="${2:?value required}"; export FULL_BUILD_BACKGROUND; shift 2 ;;
+
+    --source-sys-password) SOURCE_SYS_PASSWORD="${2:?value required}"; export SOURCE_SYS_PASSWORD; shift 2 ;;
+    --target-sys-password) TARGET_SYS_PASSWORD="${2:?value required}"; export TARGET_SYS_PASSWORD; shift 2 ;;
+    --target-admin-password) TARGET_ADMIN_PASSWORD="${2:?value required}"; export TARGET_ADMIN_PASSWORD; shift 2 ;;
+
+    --) shift; POSITIONAL+=("$@"); break ;;
+    *) POSITIONAL+=("$1"); shift ;;
+  esac
+done
+set -- "${POSITIONAL[@]}"
+
+cmd="${1:-menu}"
+shift || true
+
+case "$cmd" in
+  menu) interactive_menu ;;
+  preflight) production_preflight ;;
+  internal-run-all)
+    jid="${1:?job-id required}"; load_job_config "$jid"; set +e; workflow_all_tasks "$jid"; rc=$?; job_meta_set "$jid" exit_code "$rc"; job_meta_set "$jid" finished "$(ts)"; [[ $rc -eq 0 ]] || job_meta_set "$jid" state FAILED; exit "$rc" ;;
+  internal-resume-all)
+    jid="${1:?job-id required}"; load_job_config "$jid"; set +e; workflow_all_tasks_resume "$jid"; rc=$?; job_meta_set "$jid" exit_code "$rc"; job_meta_set "$jid" finished "$(ts)"; [[ $rc -eq 0 ]] || job_meta_set "$jid" state FAILED; exit "$rc" ;;
+  internal-selected)
+    jid="${1:?job-id required}"; kind="${2:?selection kind required}"; selector="${3:?selector required}"
+    load_job_config "$jid"
+    set +e
+    if [[ "$kind" == "tasks" ]]; then task_run_selector "$jid" "$selector"; else task_run_steps "$jid" "$selector"; fi
+    rc=$?
+    exit "$rc"
+    ;;
+  internal-failed-from)
+    jid="${1:?job-id required}"
+    set +e
+    task_failed_from "$jid"
+    rc=$?
+    exit "$rc"
+    ;;
+  task-list) task_list ;;
+  tasks)
+    selector="${1:?Usage: tasks <N|N,M|N-M|N,N,N|all> [--background|--foreground]}"
+    mode="${2:---foreground}"
+    if [[ "$mode" == "--background" ]]; then
+      task_submit_background tasks "$selector"
+    elif [[ "$mode" == "--foreground" ]]; then
+      jid="$(new_job_id)"; mkdir -p "$(job_dir "$jid")"; snapshot_job_config "$jid"
+      echo "Job ID: $jid"
+      task_run_selector "$jid" "$selector"
+      show_job "$jid"
+    else
+      die "Usage: tasks <selector> [--background|--foreground]"
+    fi
+    ;;
+  steps)
+    selector="${1:?Usage: steps <005,010,070> [--background|--foreground]}"
+    mode="${2:---foreground}"
+    if [[ "$mode" == "--background" ]]; then
+      task_submit_background steps "$selector"
+    elif [[ "$mode" == "--foreground" ]]; then
+      jid="$(new_job_id)"; mkdir -p "$(job_dir "$jid")"; snapshot_job_config "$jid"
+      echo "Job ID: $jid"
+      task_run_steps "$jid" "$selector"
+      show_job "$jid"
+    else
+      die "Usage: steps <step-list> [--background|--foreground]"
+    fi
+    ;;
+  failed-from)
+    jid="${1:?Usage: failed-from <job-id> [--background|--foreground]}"
+    mode="${2:---foreground}"
+    if [[ "$mode" == "--background" ]]; then
+      task_failed_from_background "$jid"
+    elif [[ "$mode" == "--foreground" ]]; then
+      task_failed_from "$jid"
+      show_job "$jid"
+    else
+      die "Usage: failed-from <job-id> [--background|--foreground]"
+    fi
+    ;;
+  drv-all)
+    default_drv="$ZDM360_ROOT/conf/zdm360PH.drv"
+    mode="${1:---background}"
+
+    if [[ -f "$default_drv" ]]; then
+      echo "Using driver file: $default_drv"
+      load_driver_file "$default_drv"
+      if ! driver_has_required_inputs; then
+        echo "Driver file is present but incomplete."
+        echo "Starting interactive input collection for missing/corrected values..."
+        collect_full_build_inputs
+        write_driver_file "$default_drv"
+      else
+        validate_full_build_inputs
+      fi
+    else
+      echo "Driver file not found: $default_drv"
+      echo "Starting interactive input collection..."
+      collect_full_build_inputs
+
+      write_driver_file "$default_drv"
+    fi
+
+    if [[ "$mode" == "--background" ]]; then
+      submit_all_tasks_background
+    elif [[ "$mode" == "--foreground" ]]; then
+      jid="$(new_job_id)"
+      mkdir -p "$(job_dir "$jid")"
+      workflow_all_tasks "$jid"
+      show_job "$jid"
+    else
+      die "Usage: $0 drv-all [--background|--foreground]"
+    fi
+    ;;
+  driver-template)
+    create_driver_template "${1:-$ZDM360_ROOT/conf/zdm360PH.drv}"
+    ;;
+  driver-validate)
+    file="${1:-${ZDM360_DRIVER_FILE:-}}"
+    [[ -n "$file" ]] || die "driver-validate requires a driver file"
+    load_driver_file "$file"
+    validate_full_build_inputs
+    echo "Driver validation: PASS"
+    print_driver_file_summary
+    ;;
+  driver-show)
+    file="${1:-${ZDM360_DRIVER_FILE:-}}"
+    [[ -n "$file" ]] || die "driver-show requires a driver file"
+    load_driver_file "$file"
+    print_driver_file_summary
+    ;;
+  full-build)
+    if [[ "${1:-}" == "--non-interactive" ]]; then
+      complete_build_noninteractive
+    else
+      complete_build_wizard
+    fi
+    ;;
+  all)
+    mode="${1:---background}"
+    if [[ "$mode" == "--background" ]]; then
+      submit_all_tasks_background
+    elif [[ "$mode" == "--foreground" ]]; then
+      jid="$(new_job_id)"
+      mkdir -p "$(job_dir "$jid")"
+      echo "Job ID: $jid"
+      workflow_all_tasks "$jid"
+      show_job "$jid"
+    else
+      die "Usage: $0 all [--background|--foreground]"
+    fi
+    ;;
+  resume-all)
+    jid="${1:-}"; [[ -n "$jid" ]] || die "resume-all requires job-id"
+    shift || true
+    if [[ "${1:-}" == "--background" ]]; then
+      resume_all_tasks_background "$jid"
+    else
+      workflow_all_tasks_resume "$jid"
+    fi
+    ;;
+  plan) all_task_plan ;;
+  build)
+    bg=false
+    [[ "${1:-}" == "--background" ]] && bg=true
+    if $bg; then
+      background_launch build
+    else
+      jid="$(new_job_id)"
+      mkdir -p "$(job_dir "$jid")"
+      echo "Job ID: $jid"
+      workflow_build "$jid"
+    fi
+    ;;
+  resume)
+    jid="${1:-}"; [[ -n "$jid" ]] || die "resume requires job-id"
+    shift || true
+    if [[ "${1:-}" == "--background" ]]; then
+      background_launch resume "$jid"
+    else
+      workflow_resume "$jid"
+    fi
+    ;;
+  jobs) list_jobs ;;
+  status) show_job "${1:?job-id required}" ;;
+  logs)
+    jid="${1:?job-id required}"
+    tail -n "${LINES:-200}" "$(job_dir "$jid")/output.log"
+    ;;
+  wait)
+    jid="${1:?job-id required}"
+    pid="$(job_meta_get "$jid" pid || true)"
+    [[ -n "$pid" ]] || die "No PID recorded for $jid"
+    while kill -0 "$pid" 2>/dev/null; do
+      show_job "$jid"
+      sleep "${WAIT_POLL_SECONDS:-10}"
+    done
+    show_job "$jid"
+    ;;
+  stop)
+    jid="${1:?job-id required}"
+    pgid="$(job_meta_get "$jid" pgid || true)"; pid="$(job_meta_get "$jid" pid || true)"
+    if [[ -n "$pgid" ]]; then
+      kill -TERM -- "-$pgid" 2>/dev/null || true
+      echo "Stop signal sent to job $jid process group $pgid"
+    elif [[ -n "$pid" ]]; then
+      kill -TERM "$pid" 2>/dev/null || true
+      echo "Stop signal sent to job $jid PID $pid"
+    else
+      die "No PID/PGID recorded for $jid"
+    fi
+    job_meta_set "$jid" state "STOPPED"
+    ;;
+  access-check) operator_access_preflight ;;
+  zdm-check) zdm_target_detect ;;
+  zdm-phases) zdm_list_phases ;;
+  zdm-eval) zdm_eval_physical ;;
+  zdm-online-standby)
+    ZDM_PHYSICAL_METHOD=ONLINE_PHYSICAL; ZDM_PAUSE_AFTER_STANDBY=YES
+    export ZDM_PHYSICAL_METHOD ZDM_PAUSE_AFTER_STANDBY
+    zdm_execute_physical
+    ;;
+  zdm-online-full)
+    ZDM_PHYSICAL_METHOD=ONLINE_PHYSICAL; ZDM_PAUSE_AFTER_STANDBY=NO
+    export ZDM_PHYSICAL_METHOD ZDM_PAUSE_AFTER_STANDBY
+    zdm_execute_physical
+    ;;
+  zdm-offline)
+    ZDM_PHYSICAL_METHOD=OFFLINE_PHYSICAL; ZDM_PAUSE_AFTER_STANDBY=NO
+    export ZDM_PHYSICAL_METHOD ZDM_PAUSE_AFTER_STANDBY
+    zdm_execute_physical
+    ;;
+  zdm-query)
+    if [[ -n "${1:-}" ]]; then zdm_query_job "$1"; else zdm_query_jobs; fi
+    ;;
+  zdm-resume) zdm_resume_job "${1:?job-id required}" ;;
+  zdm-suspend) zdm_suspend_job "${1:?job-id required}" ;;
+  zdm-abort) zdm_abort_job "${1:?job-id required}" ;;
+  precheck)
+    precheck_validate_config
+    precheck_ssh
+    precheck_database_roles
+    precheck_target_nonrac
+    ;;
+  placeholder) oci_placeholder_create ;;
+  dg-validate) dg_health ;;
+  sync) dg_sync ;;
+  help|-h|--help) usage ;;
+  *) usage; exit 2 ;;
+esac

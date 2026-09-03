@@ -1,0 +1,121 @@
+ZDMMigration360 Standby Manager
+
+Interactive:
+  zdm360-standby
+  zdm360-standby menu
+  zdm360-standby full-build
+
+Complete build:
+  zdm360-standby full-build
+  zdm360-standby full-build --non-interactive
+
+Submit ALL tasks at once:
+  zdm360-standby all --background
+  zdm360-standby all --foreground
+  zdm360-standby resume-all <job-id> --background
+  zdm360-standby plan
+
+Build:
+  zdm360-standby build
+  zdm360-standby build --background
+  zdm360-standby resume <job-id>
+  zdm360-standby resume <job-id> --background
+
+Job tracking:
+  zdm360-standby jobs
+  zdm360-standby status <job-id>
+  zdm360-standby logs <job-id>
+  zdm360-standby wait <job-id>
+  zdm360-standby stop <job-id>
+
+Individual operations:
+  zdm360-standby preflight
+  zdm360-standby precheck
+  zdm360-standby placeholder
+  zdm360-standby dg-validate
+  zdm360-standby sync
+
+Environment/config:
+  CONFIG_FILE=/path/standby.env
+  STANDBY_BUILD_METHOD=ACTIVE_DUPLICATE|OFFLINE_BACKUP
+  TARGET_RAC_ENABLED=YES|NO
+
+Driver file:
+  Default location: conf/zdm360PH.drv
+
+  -d, --driver FILE
+  --drv FILE
+      Load all standby input values from zdm360PH.drv.
+
+  zdm360-standby drv-all --background
+      Uses conf/zdm360PH.drv automatically.
+      If the file does not exist, prompts for all required values,
+      creates conf/zdm360PH.drv, then submits the build.
+
+  zdm360-standby -d ./zdm360PH.drv all --background
+  zdm360-standby --driver ./zdm360PH.drv plan
+
+Driver utilities:
+  zdm360-standby driver-template [FILE]
+  zdm360-standby driver-validate FILE
+  zdm360-standby driver-show FILE
+
+Precedence:
+  conf/standby.env < zdm360PH.drv < explicit CLI switches
+
+Non-interactive input switches:
+  -s, --source-db-name NAME
+  -u, --source-db-unique-name NAME
+  -S, --source-sid SID
+  -H, --source-host HOST
+  -O, --source-oracle-home PATH
+  -r, --source-service SERVICE
+
+  -t, --target-db-name NAME
+  -U, --target-db-unique-name NAME
+  -T, --target-sid SID
+  -h, --target-host HOST
+  -o, --target-oracle-home PATH
+  -R, --target-service SERVICE
+
+  -m, --method ACTIVE_DUPLICATE|OFFLINE_BACKUP
+  -p, --platform AUTO|BASE_DB_SERVICE_DBCLI|GENERIC_OCI_OR_SELF_MANAGED
+  --source-os-user USER
+  --target-os-user USER
+  --target-provision-user USER
+  --source-port PORT
+  --target-port PORT
+  --target-aux-port PORT
+  --target-aux-listener NAME
+  --source-tns-alias ALIAS
+  --target-tns-alias ALIAS
+  --db-create-file-dest DEST
+  --fra DEST
+  --fra-size SIZE
+  --source-backup-stage PATH
+  --target-backup-stage PATH
+  --copy-method SCP|RSYNC|NFS
+  --rac YES|NO
+  --rac-instances N
+  --grid-home PATH
+  --undo-prefix NAME
+  --redo-size-mb MB
+  --sync-wait SECONDS
+  --sync-poll SECONDS
+  --source-tde-wallet PATH
+  --target-tde-wallet PATH
+  --dg-archive-dest-id N
+  --config FILE
+
+Secrets (supported but environment/secret manager is recommended):
+  --source-sys-password PASSWORD
+  --target-sys-password PASSWORD
+  --target-admin-password PASSWORD
+
+Example:
+  zdm360-standby \
+    -s ORCL -u ORCLPRD -S ORCL1 -H primary1 -O /u01/app/oracle/product/19c/dbhome_1 \
+    -r ORCLPRD \
+    -t ORCL -U ORCLSTBY -T ORCL1 -h standby1 -o /u01/app/oracle/product/19c/dbhome_1 \
+    -R ORCLSTBY -m ACTIVE_DUPLICATE -p AUTO --rac NO \
+    all --background

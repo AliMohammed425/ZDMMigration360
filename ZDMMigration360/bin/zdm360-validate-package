@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+fail=0
+for f in "$ROOT"/bin/* "$ROOT"/lib/*.sh "$ROOT"/tests/*.sh; do
+  [[ -f "$f" ]] || continue
+  bash -n "$f" || fail=1
+done
+[[ $fail -eq 0 ]] || exit 1
+"$ROOT/tests/selftest.sh"
+[[ -f "$ROOT/conf/zdm360PH.drv" ]] || { echo "Missing conf/zdm360PH.drv"; exit 1; }
+[[ "$(stat -c %a "$ROOT/conf/zdm360PH.drv")" == 600 ]] || { echo "Driver permissions must be 600"; exit 1; }
+echo "PACKAGE VALIDATION PASS"
